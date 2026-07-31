@@ -252,6 +252,15 @@ function StudentDashboard() {
 
       // Load ATS data
       await loadAtsData();
+
+      try {
+        const { data: mentorHistoryData } = await api.get("/student/mentor/history");
+        if (mentorHistoryData?.history?.length > 0) {
+          setMentorMessages(mentorHistoryData.history);
+        }
+      } catch (_err) {
+        // retain default initialMentorMessages
+      }
     } else {
       setRecommendedCompanies([]);
       setRecommendedJobs([]);
@@ -806,29 +815,50 @@ function StudentDashboard() {
             </div>
           </SectionCard>
 
-          <SectionCard title="AI Career Mentor Chatbot" subtitle="Ask for resume, job, interview, or skill-gap advice." className="lg:col-span-2">
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-              <div className="max-h-72 space-y-3 overflow-y-auto pr-1">
+          <SectionCard title="Career Guidance & Mentor Hub" subtitle="Real-time interactive career mentoring and resume advice." className="lg:col-span-2">
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="mb-3 flex items-center justify-between border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2">
+                  <span className="flex h-2.5 w-2.5 rounded-full bg-emerald-500"></span>
+                  <span className="text-xs font-bold uppercase tracking-wider text-emerald-800">Live AI Mentor</span>
+                </div>
+                <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-800">Ready to assist</span>
+              </div>
+
+              <div className="max-h-72 min-h-[160px] space-y-3 overflow-y-auto pr-1">
                 {mentorMessages.map((item, index) => (
-                  <div key={`${item.role}-${index}`} className={`max-w-[90%] rounded-2xl px-3 py-2 text-sm ${item.role === "you" ? "ml-auto bg-slate-900 text-white" : "bg-white text-slate-800 shadow-sm"}`}>
+                  <div key={`${item.role}-${index}`} className={`max-w-[90%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${item.role === "you" ? "ml-auto bg-emerald-700 text-white font-medium shadow-sm" : "bg-slate-100 text-slate-900 border border-slate-200/60"}`}>
                     {item.text}
                   </div>
                 ))}
               </div>
+
+              <div className="mt-3 flex flex-wrap gap-2 pt-2 border-t border-slate-100">
+                {[
+                  "How can I improve my matching score?",
+                  "What skills are most in demand?",
+                  "How can I fix my resume weaknesses?"
+                ].map((quickPrompt) => (
+                  <button
+                    key={quickPrompt}
+                    type="button"
+                    onClick={() => {
+                      setMentorInput(quickPrompt);
+                    }}
+                    className="rounded-full border border-emerald-200 bg-emerald-50/70 px-3 py-1 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 transition"
+                  >
+                    💡 {quickPrompt}
+                  </button>
+                ))}
+              </div>
             </div>
+
             <form className="mt-3 flex gap-2" onSubmit={sendMentorMessage}>
-              <input className="input flex-1" placeholder="Ask your mentor something specific" value={mentorInput} onChange={(e) => setMentorInput(e.target.value)} />
-              <button className="btn-primary disabled:cursor-not-allowed disabled:opacity-60" disabled={isSendingMentor} type="submit">
-                {isSendingMentor ? "Sending..." : "Ask"}
+              <input className="input flex-1 border-slate-300 focus:border-emerald-600" placeholder="Ask your mentor for tailored advice..." value={mentorInput} onChange={(e) => setMentorInput(e.target.value)} />
+              <button className="btn-primary disabled:cursor-not-allowed disabled:opacity-60 font-bold px-5" disabled={isSendingMentor} type="submit">
+                {isSendingMentor ? "Sending..." : "Ask Mentor"}
               </button>
             </form>
-            <div className="mt-3 grid gap-2 md:grid-cols-3">
-              {resumeWeaknesses?.next_steps?.slice(0, 3).map((step) => (
-                <div key={step} className="rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs text-slate-700">
-                  {step}
-                </div>
-              ))}
-            </div>
           </SectionCard>
 
           <SectionCard title="Resume Weakness Detector" subtitle="Signals that can reduce matching or interview performance." className="lg:col-span-1">

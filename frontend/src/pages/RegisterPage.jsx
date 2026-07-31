@@ -3,7 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import api from "../services/api";
 
 function RegisterPage() {
-  const [form, setForm] = useState({ email: "", password: "", role: "student" });
+  const [form, setForm] = useState({ username: "", email: "", password: "", role: "student" });
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const navigate = useNavigate();
@@ -26,6 +26,7 @@ function RegisterPage() {
       <h1 className="mb-1 text-3xl font-bold">Create Account</h1>
       <p className="mb-6 text-sm text-slate-600">Student, company, or admin</p>
       <form onSubmit={submit} className="space-y-4">
+        <input className="input" placeholder="Username / Full Name" type="text" value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} required />
         <input className="input" placeholder="Email" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required />
         <input className="input" placeholder="Password" type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required />
         <select className="input" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>

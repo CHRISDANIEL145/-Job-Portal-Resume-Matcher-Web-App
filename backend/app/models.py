@@ -30,6 +30,7 @@ job_skill = db.Table(
 
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(80), nullable=True)
     email = db.Column(db.String(120), unique=True, nullable=False)
     password_hash = db.Column(db.String(255), nullable=False)
     role = db.Column(db.String(20), nullable=False)
@@ -42,6 +43,7 @@ class User(db.Model):
 class Skill(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), unique=True, nullable=False)
+    username = db.Column(db.String(255), nullable=True)
 
 
 class StudentProfile(db.Model):
@@ -86,8 +88,10 @@ class Application(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     student_id = db.Column(db.Integer, db.ForeignKey("student_profile.id"), nullable=False)
     job_id = db.Column(db.Integer, db.ForeignKey("job_post.id"), nullable=False)
+    username = db.Column(db.String(100), nullable=True)
     matching_score = db.Column(db.Float, default=0)
     status = db.Column(db.String(20), default=ApplicationStatus.APPLIED.value)
+    application_summary = db.Column(db.String(300), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     __table_args__ = (db.UniqueConstraint("student_id", "job_id", name="uq_student_job"),)
@@ -99,4 +103,13 @@ class Notification(db.Model):
     title = db.Column(db.String(150), nullable=False)
     message = db.Column(db.String(500), nullable=False)
     read = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class MentorChatLog(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    username = db.Column(db.String(100), nullable=True)
+    role = db.Column(db.String(20), nullable=False)  # 'you' or 'mentor'
+    message = db.Column(db.Text, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)

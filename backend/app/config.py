@@ -8,7 +8,10 @@ class Config:
     BASE_DIR = os.path.abspath(os.path.dirname(__file__))
     SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-key-at-least-32-chars-long-for-security")
     JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "jwt-secret-key-at-least-32-chars-long-for-jwt-security")
-    _db_url = os.getenv("DATABASE_URL", "sqlite:///placement.db")
+    _default_supabase = "postgresql://postgres.kruqkhgftjixtfflpdob:Daniell1100%40%3D_@aws-1-ap-northeast-2.pooler.supabase.com:5432/postgres"
+    _db_url = os.getenv("DATABASE_URL", _default_supabase)
+    if not _db_url or "sqlite" in _db_url.lower():
+        _db_url = _default_supabase
     if _db_url.startswith("postgres://"):
         _db_url = _db_url.replace("postgres://", "postgresql://", 1)
     SQLALCHEMY_DATABASE_URI = _db_url

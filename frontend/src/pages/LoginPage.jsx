@@ -36,7 +36,7 @@ function LoginPage() {
       <h1 className="mb-1 text-3xl font-bold">Login</h1>
       <p className="mb-6 text-sm text-slate-600">Access your placement dashboard</p>
       <form onSubmit={submit} className="space-y-4">
-        <input className="input" placeholder="Email" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required />
+        <input className="input" placeholder="Email or Username" type="text" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required />
         <input className="input" placeholder="Password" type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required />
         {error && <p className="text-sm text-red-600">{error}</p>}
         <button className="btn-primary w-full" type="submit">Login</button>

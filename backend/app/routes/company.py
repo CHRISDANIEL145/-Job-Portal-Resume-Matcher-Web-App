@@ -1,7 +1,8 @@
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import get_jwt_identity
+from sqlalchemy import text
 from app.extensions import db
-from app.models import CompanyProfile, JobPost, Skill, UserRole
+from app.models import CompanyProfile, JobPost, Skill, User, UserRole
 from app.utils.api import APIError, serialize_paginated
 from app.utils.decorators import role_required
 from app.utils.validators import parse_optional_gpa, parse_pagination_args, parse_skill_list
@@ -61,6 +62,34 @@ def upsert_company_profile():
     profile.website_url = website_url
     db.session.commit()
 
+    try:
+        user_obj = User.query.get(user_id)
+        uname = f"{company_name} ({user_obj.email})" if user_obj else company_name
+        jcount = len(profile.jobs) if hasattr(profile, 'jobs') else 0
+        summary_txt = f"{uname} Company Profile - Website: {website_url or 'N/A'} | {jcount} jobs posted. {description or ''}"[:280]
+        db.session.execute(text("""
+            UPDATE company_profile SET username = :uname WHERE id = :cid;
+        """), {"uname": uname, "cid": profile.id})
+        db.session.execute(text("""
+            INSERT INTO company_profile_dashboard (
+                user_id, username, company_name, description, website_url, jobs_posted_count, summary, created_at
+            )
+            VALUES (:uid, :uname, :cname, :desc, :web, :jcount, :summary, CURRENT_TIMESTAMP);
+        """), {
+            "uid": user_id,
+            "uname": uname,
+            "cname": company_name,
+            "desc": description,
+            "web": website_url,
+            "jcount": jcount,
+            "summary": summary_txt
+        })
+        db.session.commit()
+    except Exception:
+        try:
+            db.session.rollback()
+        except Exception:
+            pass
 
     return jsonify({"message": "Company profile saved", "company_id": profile.id})
 
@@ -113,6 +142,36 @@ def create_job_post():
     _set_job_skills(job, skills)
 
     db.session.commit()
+
+    try:
+        user_obj = User.query.get(user_id)
+        uname = f"{profile.company_name} ({user_obj.email})" if user_obj else profile.company_name
+        sk_str = ", ".join(skills) if skills else "python, sql, git"
+        summary_txt = f"{uname} posted job opening: '{title}' - Skills: {sk_str} [Pending Review]"[:280]
+        db.session.execute(text("""
+            UPDATE job_post SET username = :uname WHERE id = :jid;
+        """), {"uname": uname, "jid": job.id})
+        db.session.execute(text("""
+            INSERT INTO post_job_opening (
+                company_id, username, title, description, min_gpa, approved, skills_required, summary, created_at
+            )
+            VALUES (:cid, :uname, :title, :desc, :gpa, FALSE, :skills, :summary, CURRENT_TIMESTAMP);
+        """), {
+            "cid": profile.id,
+            "uname": uname,
+            "title": title,
+            "desc": description,
+            "gpa": min_gpa,
+            "skills": sk_str,
+            "summary": summary_txt
+        })
+        db.session.commit()
+    except Exception:
+        try:
+            db.session.rollback()
+        except Exception:
+            pass
+
     return jsonify({"message": "Job created, pending admin approval", "job_id": job.id}), 201
 
 

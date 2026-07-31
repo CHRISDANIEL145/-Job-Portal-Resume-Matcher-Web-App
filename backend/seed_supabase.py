@@ -65,13 +65,13 @@ def seed_supabase_data():
                 "email": "recruiter@techcorp.com",
                 "name": "TechCorp Global",
                 "desc": "Leading tech corporation in AI & Cloud solutions.",
-                "url": "https://www.techcorp.example.com"
+                "url": "https://careers.google.com"
             },
             {
                 "email": "hiring@innovateai.com",
                 "name": "Innovate AI Labs",
                 "desc": "Next-generation AI research and development laboratory.",
-                "url": "https://www.innovateai.example.com"
+                "url": "https://openai.com/careers"
             }
         ]
         companies_map = {}
@@ -237,7 +237,8 @@ def seed_supabase_data():
                         student_id=s_prof.id,
                         job_id=j_post.id,
                         matching_score=ad["score"],
-                        status=ad["status"]
+                        status=ad["status"],
+                        application_summary=f"{ad['student']} applied for {ad['job']} at {j_post.company.company_name}"
                     )
                     db.session.add(application)
                     print(f"  + Added Application: {ad['student']} -> {ad['job']} (score: {ad['score']})")

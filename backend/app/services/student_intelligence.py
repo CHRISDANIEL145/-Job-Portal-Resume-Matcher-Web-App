@@ -443,29 +443,79 @@ def build_peer_comparison(profile: StudentProfile) -> dict:
     
     if total_peers <= 1:
         avg_gpa = profile.gpa or 7.5
-        avg_skills = len(student_skills) or 3
-        percentile = 85.0
+        avg_skills = len(student_skills) or 5
+        gpa_percentile = 85
+        skill_percentile = 90
     else:
         gpas = [s.gpa for s in all_students if s.gpa is not None]
         avg_gpa = round(sum(gpas) / len(gpas), 2) if gpas else 7.5
         skill_counts = [len(s.skills) for s in all_students]
-        avg_skills = round(sum(skill_counts) / len(skill_counts), 1) if skill_counts else 3.0
+        avg_skills = round(sum(skill_counts) / len(skill_counts), 1) if skill_counts else 5.0
         
         your_gpa = profile.gpa or 0.0
-        peers_below = sum(1 for g in gpas if g <= your_gpa)
-        percentile = round((peers_below / len(gpas)) * 100, 1) if gpas else 75.0
+        peers_below_gpa = sum(1 for g in gpas if g <= your_gpa)
+        gpa_percentile = max(5, round((peers_below_gpa / len(gpas)) * 100)) if gpas else 85
+        
+        peers_below_skills = sum(1 for sc in skill_counts if sc <= len(student_skills))
+        skill_percentile = max(5, round((peers_below_skills / len(skill_counts)) * 100)) if skill_counts else 90
+
+    notes = []
+    if (profile.gpa or 0) >= avg_gpa:
+        notes.append(f"Your GPA ({profile.gpa or 'N/A'}) is above the cohort average of {avg_gpa}.")
+    else:
+        notes.append(f"Your GPA ({profile.gpa or 'N/A'}) is below the cohort average of {avg_gpa} — boost practical projects.")
+        
+    if len(student_skills) >= avg_skills:
+        notes.append(f"Your skill breadth ({len(student_skills)} skills) puts you ahead of the cohort average ({avg_skills} skills).")
+    else:
+        notes.append(f"You have {len(student_skills)} skills compared to the cohort average of {avg_skills}. Consider adding demand skills.")
+
+    try:
+        from app.extensions import db
+        from sqlalchemy import text
+        user_id_val = profile.user_id
+        email_val = profile.user.email if (profile.user and hasattr(profile.user, 'email')) else ""
+        username_val = f"{profile.full_name} ({email_val})" if email_val else profile.full_name
+        summary_val = " ".join(notes)
+        db.session.execute(text("""
+            INSERT INTO peer_comparison (
+                user_id, username, student_gpa, student_skills_count,
+                cohort_avg_gpa, cohort_avg_skills, gpa_percentile, skills_percentile,
+                comparison_summary, created_at
+            )
+            VALUES (
+                :uid, :uname, :gpa, :scount,
+                :avg_gpa, :avg_skills, :gpa_pct, :skill_pct,
+                :summary, CURRENT_TIMESTAMP
+            );
+        """), {
+            "uid": user_id_val, "uname": username_val,
+            "gpa": float(profile.gpa or 7.0), "scount": len(student_skills),
+            "avg_gpa": avg_gpa, "avg_skills": avg_skills,
+            "gpa_pct": gpa_percentile, "skill_pct": skill_percentile,
+            "summary": summary_val
+        })
+        db.session.commit()
+    except Exception:
+        try:
+            db.session.rollback()
+        except Exception:
+            pass
 
     return {
-        "percentile_rank": f"Top {max(1, int(100 - percentile))}%",
-        "cgpa_comparison": {
-            "your_cgpa": profile.gpa,
-            "peer_average_cgpa": avg_gpa,
-            "status": "Above Average" if (profile.gpa or 0) >= avg_gpa else "Focus on Skill Depth"
+        "your_profile": {
+            "gpa": profile.gpa or "-",
+            "skill_count": len(student_skills)
         },
-        "skill_count_comparison": {
-            "your_skills": len(student_skills),
-            "peer_average_skills": avg_skills,
+        "peer_average": {
+            "gpa": avg_gpa,
+            "skill_count": avg_skills
         },
+        "percentiles": {
+            "gpa_percentile": gpa_percentile,
+            "skill_percentile": skill_percentile
+        },
+        "comparison_notes": notes,
         "total_peers": total_peers,
     }
 

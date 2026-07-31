@@ -1,5 +1,7 @@
 from flask import Blueprint, jsonify
-from app.models import Application, CompanyProfile, JobPost, StudentProfile, UserRole
+from flask_jwt_extended import get_jwt_identity
+from sqlalchemy import text
+from app.models import Application, CompanyProfile, JobPost, StudentProfile, User, UserRole
 from app.extensions import db
 from app.services.notifier import create_notification
 from app.utils.api import APIError
@@ -82,7 +84,41 @@ def analytics():
     total_apps = Application.query.count()
     shortlisted = Application.query.filter_by(status="shortlisted").count()
 
-    placed_ratio = (shortlisted / total_students * 100) if total_students else 0
+    placed_ratio = round((shortlisted / total_students * 100), 2) if total_students else 0
+
+    try:
+        user_id = int(get_jwt_identity())
+        user_obj = User.query.get(user_id)
+        uname = f"Admin {user_obj.username} ({user_obj.email})" if user_obj else f"Admin {user_id}"
+        summary_txt = f"{uname} Placement Analytics - Students: {total_students}, Companies: {total_companies}, Total Jobs: {total_jobs}, Approved Jobs: {approved_jobs}, Applications: {total_apps}, Shortlisted: {shortlisted}, Placement Ratio: {placed_ratio}%"
+        db.session.execute(text("""
+            INSERT INTO placement_analytics (
+                username, total_students, total_companies, total_jobs,
+                approved_jobs, total_applications, shortlisted_students,
+                placement_ratio_percent, summary, created_at
+            )
+            VALUES (
+                :uname, :st, :co, :jobs,
+                :appr, :apps, :short,
+                :ratio, :summary, CURRENT_TIMESTAMP
+            );
+        """), {
+            "uname": uname,
+            "st": total_students,
+            "co": total_companies,
+            "jobs": total_jobs,
+            "appr": approved_jobs,
+            "apps": total_apps,
+            "short": shortlisted,
+            "ratio": placed_ratio,
+            "summary": summary_txt
+        })
+        db.session.commit()
+    except Exception:
+        try:
+            db.session.rollback()
+        except Exception:
+            pass
 
     return jsonify(
         {
@@ -92,6 +128,6 @@ def analytics():
             "approved_jobs": approved_jobs,
             "total_applications": total_apps,
             "shortlisted_students": shortlisted,
-            "placement_ratio_percent": round(placed_ratio, 2),
+            "placement_ratio_percent": placed_ratio,
         }
     )

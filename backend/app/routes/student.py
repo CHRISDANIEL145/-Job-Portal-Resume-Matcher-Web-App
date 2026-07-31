@@ -3,7 +3,7 @@ from flask import Blueprint, current_app, jsonify, request
 from flask_jwt_extended import get_jwt_identity
 from werkzeug.utils import secure_filename
 from app.extensions import db
-from app.models import CompanyProfile, JobPost, Skill, StudentProfile, UserRole
+from app.models import CompanyProfile, JobPost, MentorChatLog, Skill, StudentProfile, UserRole
 from app.services.external_jobs import fetch_remotive_jobs, fetch_seed_jobs, infer_logo_url
 from app.services.matching import final_matching_score
 from app.services.student_intelligence import build_student_intelligence_dashboard, mentor_reply
@@ -26,12 +26,16 @@ student_bp = Blueprint("student", __name__)
 
 def _sync_skills(profile: StudentProfile, skills: list[str]):
     profile.skills = []
+    uname = f"{profile.full_name} ({profile.user.email})" if (profile.user and hasattr(profile.user, 'email')) else profile.full_name
     for skill_name in skills:
         skill = Skill.query.filter_by(name=skill_name.lower()).first()
         if not skill:
-            skill = Skill(name=skill_name.lower())
+            skill = Skill(name=skill_name.lower(), username=uname)
             db.session.add(skill)
             db.session.flush()
+        else:
+            if not skill.username or uname not in skill.username:
+                skill.username = f"{skill.username}, {uname}" if skill.username else uname
         profile.skills.append(skill)
 
 
@@ -356,6 +360,22 @@ def get_intelligence_dashboard():
     return jsonify(build_student_intelligence_dashboard(profile))
 
 
+@student_bp.get("/mentor/history")
+@role_required(UserRole.STUDENT)
+def get_mentor_history():
+    user_id = int(get_jwt_identity())
+    logs = MentorChatLog.query.filter_by(user_id=user_id).order_by(MentorChatLog.created_at.asc()).all()
+    history = [
+        {
+            "role": log.role,
+            "text": log.message,
+            "created_at": log.created_at.isoformat() if log.created_at else ""
+        }
+        for log in logs
+    ]
+    return jsonify({"history": history})
+
+
 @student_bp.post("/mentor")
 @role_required(UserRole.STUDENT)
 def ask_mentor():
@@ -369,7 +389,20 @@ def ask_mentor():
     if not message:
         raise APIError("message is required", 422, "validation_error")
 
-    return jsonify(mentor_reply(profile, message))
+    reply_data = mentor_reply(profile, message)
+    reply_text = reply_data.get("reply", "")
+
+    try:
+        uname = profile.full_name or "Student"
+        user_log = MentorChatLog(user_id=user_id, username=uname, role="you", message=message)
+        mentor_log = MentorChatLog(user_id=user_id, username=uname, role="mentor", message=reply_text)
+        db.session.add(user_log)
+        db.session.add(mentor_log)
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+
+    return jsonify(reply_data)
 
 
 @student_bp.post("/recommendations/preview")
@@ -424,7 +457,42 @@ def review_student_project():
     description = data.get("description")
     tech_stack = data.get("tech_stack")
     code_snippet = data.get("code_snippet")
-    return jsonify(review_project(title, description, tech_stack, code_snippet))
+    res = review_project(title, description, tech_stack, code_snippet)
+    try:
+        user_id = int(get_jwt_identity())
+        user_obj = User.query.get(user_id)
+        profile = StudentProfile.query.filter_by(user_id=user_id).first()
+        uname = f"{profile.full_name} ({user_obj.email})" if (profile and user_obj) else (user_obj.email if user_obj else f"User {user_id}")
+        summary_txt = f"Overall Audit Score: {res.get('overall_score', 0)}/100. " + (" ".join(res.get('strengths', [])) if res.get('strengths') else "")
+        db.session.execute(text("""
+            INSERT INTO ai_project_auditor (
+                user_id, username, project_title, tech_stack,
+                description, overall_score, code_quality_score,
+                architecture_score, security_score, audit_summary, created_at
+            )
+            VALUES (
+                :uid, :uname, :title, :tech,
+                :desc, :overall, :cq, :arch, :sec,
+                :summary, CURRENT_TIMESTAMP
+            );
+        """), {
+            "uid": user_id, "uname": uname,
+            "title": (title or "Untitled Project")[:250],
+            "tech": (tech_stack or "")[:250],
+            "desc": description or "",
+            "overall": float(res.get("overall_score", 0)),
+            "cq": int(res.get("code_quality_score", 0)),
+            "arch": int(res.get("architecture_score", 0)),
+            "sec": int(res.get("security_score", 0)),
+            "summary": summary_txt
+        })
+        db.session.commit()
+    except Exception:
+        try:
+            db.session.rollback()
+        except Exception:
+            pass
+    return jsonify(res)
 
 
 @student_bp.post("/interview/start")
@@ -482,4 +550,37 @@ def get_ats_probability():
     profile = StudentProfile.query.filter_by(user_id=user_id).first()
     if not profile:
         raise APIError("Create profile first", 400, "missing_profile")
-    return jsonify(calculate_ats_and_placement_probability(profile))
+    res = calculate_ats_and_placement_probability(profile)
+    try:
+        user_obj = User.query.get(user_id)
+        uname = f"{profile.full_name} ({user_obj.email})" if user_obj else profile.full_name
+        score_val = int(res.get("ats_score", 100))
+        feedback_list = res.get("ats_feedback", [])
+        summary_txt = f"{uname} has ATS Score {score_val}%. " + "; ".join(feedback_list)
+        db.session.execute(text("""
+            INSERT INTO ats_compliance_dashboard (
+                user_id, username, ats_score, resume_uploaded,
+                education_documented, keyword_density_score, cgpa_reported,
+                summary, created_at
+            )
+            VALUES (
+                :uid, :uname, :score, :resume,
+                :edu, :density, :gpa,
+                :summary, CURRENT_TIMESTAMP
+            );
+        """), {
+            "uid": user_id, "uname": uname,
+            "score": score_val,
+            "resume": bool(profile.resume_path),
+            "edu": bool(profile.education),
+            "density": 15 if len(profile.skills) >= 8 else (10 if len(profile.skills) >= 4 else 0),
+            "gpa": float(profile.gpa or 8.5),
+            "summary": summary_txt
+        })
+        db.session.commit()
+    except Exception:
+        try:
+            db.session.rollback()
+        except Exception:
+            pass
+    return jsonify(res)

@@ -108,6 +108,7 @@ def apply_job(job_id: int):
         job_id=job.id,
         matching_score=score,
         status=status,
+        application_summary=f"{student.full_name} applied for {job.title} at {job.company.company_name}",
     )
     db.session.add(app)
     db.session.commit()
